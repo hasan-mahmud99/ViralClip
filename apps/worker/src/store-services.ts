@@ -25,9 +25,9 @@ export async function persistTranscriptRow(
 
 export async function persistMomentRow(
   store: Store,
-  input: { sourceId: string; start: number; end: number; score: number; category: string; reason: string; hook: string; clipFingerprint: string }
+  input: { id?: string; sourceId: string; start: number; end: number; score: number; category: string; reason: string; hook: string; clipFingerprint: string }
 ): Promise<MomentRow> {
-  const id = idFor("mom", input.clipFingerprint);
+  const id = input.id ?? idFor("mom", input.clipFingerprint);
   const existing = (await store.listMomentsForSource(input.sourceId)).find((m) => m.id === id);
   if (existing) return existing;
   const row: MomentRow = { ...input, id, status: "DETECTED", createdAt: nowIso(), updatedAt: nowIso() };

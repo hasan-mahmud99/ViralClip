@@ -81,9 +81,7 @@ export function buildServices(opts: ServiceOpts): AgentServices {
         hook: m.hook,
         clipFingerprint: sha256(`${source.id}:${m.start}-${m.end}`),
       }));
-      for (const c of candidates) {
-        await persistMomentRow(store, { ...c, clipFingerprint: c.clipFingerprint });
-      }
+      // NOTE: moments are persisted only when one is selected (writeScript stage) to keep FK-consistent ids.
       return candidates;
     },
 
@@ -105,6 +103,18 @@ export function buildServices(opts: ServiceOpts): AgentServices {
         kind: (KINDS.includes(b.kind as never) ? b.kind : "NARRATION") as (typeof KINDS)[number],
         text: b.text,
       }));
+      // Persist the chosen moment under its exact id first (FK for scripts.moment_id).
+      await persistMomentRow(store, {
+        id: moment.id,
+        sourceId: source.id,
+        start: moment.start,
+        end: moment.end,
+        score: moment.score,
+        category: moment.category,
+        reason: moment.reason,
+        hook: moment.hook,
+        clipFingerprint: moment.clipFingerprint,
+      });
       const row = await persistScriptRow(store, {
         sourceId: source.id,
         momentId: moment.id,
