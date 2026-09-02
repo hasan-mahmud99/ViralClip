@@ -246,4 +246,4 @@ if (require.main === module) {
   });
 }
 
-export { runSourceDiscovery, buildServices, gateAndPublish, createStoreFromEnv };
+export { runSourceDiscovery, buildServices, gateAndPublish };
