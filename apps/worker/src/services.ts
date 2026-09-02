@@ -1,8 +1,8 @@
 import { Store } from "@viralclip/database";
-import { toDomainSource, persistTranscriptRow, persistMomentRow, persistScriptRow, persistRenderRow } from "./store-services";
+import { toDomainSource, persistTranscriptRow, persistMomentRow, persistScriptRow, persistRenderRow, idFor } from "./store-services";
 import { runQa, renderReel } from "@viralclip/video";
 import type { LLMProvider, TTSProvider, TranscriptionProvider } from "@viralclip/providers";
-import type { AgentServices } from "./pipeline";
+import type { AgentServices, MomentCandidate, ScriptDraft } from "./pipeline";
 import { sha256 } from "@viralclip/shared";
 
 export interface ServiceOpts {
@@ -71,17 +71,15 @@ export function buildServices(opts: ServiceOpts): AgentServices {
         moments: fallbackMoments,
       });
       const usable = parsed.moments && parsed.moments.length > 0 ? parsed.moments : fallbackMoments;
-      const candidates = usable.map((m) => ({
-        sourceId: source.id,
-        start: m.start,
-        end: Math.max(m.end, m.start + 3),
-        score: m.score,
-        category: m.category,
-        reason: m.reason,
-        hook: m.hook,
-        clipFingerprint: sha256(`${source.id}:${m.start}-${m.end}`),
-      }));
-      // NOTE: moments are persisted only when one is selected (writeScript stage) to keep FK-consistent ids.
+      const candidates = usable.map((m) => {
+        const clipFingerprint = sha256(`${source.id}:${m.start}-${m.end}`);
+        const saved = { sourceId: source.id, start: m.start, end: Math.max(m.end, m.start + 3), score: m.score, category: m.category, reason: m.reason, hook: m.hook, clipFingerprint, id: idFor("mom", clipFingerprint) };
+        return saved;
+      });
+      // persist each candidate so pipeline-assigned ids have DB rows (FK-safe for scripts)
+      for (const c of candidates) {
+        await persistMomentRow(store, c);
+      }
       return candidates;
     },
 
@@ -124,6 +122,7 @@ export function buildServices(opts: ServiceOpts): AgentServices {
         blocks,
       });
       return {
+        id: row.id,
         sourceId: source.id,
         momentId: moment.id,
         language: (row.language ?? language) as "bn" | "en" | "mixed",
@@ -164,8 +163,8 @@ export function buildServices(opts: ServiceOpts): AgentServices {
         end: moment.end,
       });
       const dur = Math.max(3, moment.end - moment.start);
-      await persistRenderRow(store, { sourceId: source.id, momentId: moment.id, scriptId: script.id, filePath: outputPath, durationSec: dur });
-      return { filePath: outputPath, durationSec: dur };
+      const render = await persistRenderRow(store, { sourceId: source.id, momentId: moment.id, scriptId: script.id, filePath: outputPath, durationSec: dur });
+      return { filePath: outputPath, durationSec: dur, renderId: render.id };
     },
 
     async qa(input) {

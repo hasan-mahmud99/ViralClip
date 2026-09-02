@@ -81,12 +81,12 @@ export async function advanceReel(
   log.info("pipeline running", { reelId: reel.id, sourceId: source.id });
 
   const outputPath = `${outDir}/renders/reel-${Date.now()}.mp4`;
-  const { qa } = await pipeline.run(sourceRecord, outputPath);
+  const { render, qa } = await pipeline.run(sourceRecord, outputPath);
 
   const nextState = qa.passed ? (opts?.approval === "manual" ? "WAITING_FOR_APPROVAL" : "READY") : "FAILED";
   await store.updateReel(reel.id, {
     state: qa.passed ? "QA_PASSED" : "FAILED",
-    renderId: `render_${Date.now()}`,
+    renderId: render.id,
     qaScore: qa.score,
     errorMessage: qa.passed ? undefined : "QA failed",
     lastAttemptAt: nowIso(),

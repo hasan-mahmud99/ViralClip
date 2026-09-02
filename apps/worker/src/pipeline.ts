@@ -7,11 +7,14 @@ import {
   RenderJob,
 } from "@viralclip/shared";
 
+export type MomentCandidate = Omit<Moment, "id" | "status" | "createdAt" | "updatedAt"> & { id?: string };
+export type ScriptDraft = Omit<Script, "id" | "status" | "createdAt" | "updatedAt"> & { id?: string };
+
 export interface AgentServices {
   evaluateSource(source: SourceVideo): Promise<{ score: number; category: string; reason: string; recommended: boolean }>;
   transcribe(source: SourceVideo): Promise<Transcript>;
-  findMoments(source: SourceVideo, transcript: Transcript): Promise<Omit<Moment, "id" | "status" | "createdAt" | "updatedAt">[]>;
-  writeScript(source: SourceVideo, moment: Moment): Promise<Omit<Script, "id" | "status" | "createdAt" | "updatedAt">>;
+  findMoments(source: SourceVideo, transcript: Transcript): Promise<MomentCandidate[]>;
+  writeScript(source: SourceVideo, moment: Moment): Promise<ScriptDraft>;
   critiqueScript(source: SourceVideo, script: Script): Promise<ScriptCritique>;
   generateMetadata(source: SourceVideo, script: Script): Promise<{ title: string; caption: string; hashtags: string[] }>;
   renderReel(input: {
@@ -19,7 +22,7 @@ export interface AgentServices {
     moment: Moment;
     script: Script;
     outputPath: string;
-  }): Promise<{ filePath: string; durationSec: number }>;
+  }): Promise<{ filePath: string; durationSec: number; renderId?: string }>;
   qa(input: { filePath: string; width?: number; height?: number }): Promise<{ passed: boolean; score: number; issues: string[] }>;
 }
 
@@ -45,18 +48,22 @@ export class ReelPipeline {
     const best = candidates.sort((a, b) => b.score - a.score)[0];
     if (!best) throw new Error("no suitable moments found");
 
+    const momentId = best.id ?? `mom_${Date.now()}`;
+    const { id: _bid, ...bestRest } = best;
     const moment: Moment = {
-      id: `mom_${Date.now()}`,
-      ...best,
+      ...bestRest,
+      id: momentId,
       status: "SELECTED",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
     const draft = await this.services.writeScript(source, moment);
+    const scriptId = draft.id ?? `scr_${Date.now()}`;
+    const { id: _sid, ...draftRest } = draft;
     const script: Script = {
-      id: `scr_${Date.now()}`,
-      ...draft,
+      ...draftRest,
+      id: scriptId,
       sourceId: source.id,
       momentId: moment.id,
       status: "GENERATED",
@@ -75,7 +82,7 @@ export class ReelPipeline {
       height: this.opts.renderHeight,
     });
     const render: RenderJob = {
-      id: `ren_${Date.now()}`,
+      id: rendered.renderId ?? `ren_${Date.now()}`,
       sourceId: source.id,
       momentId: moment.id,
       scriptId: script.id,
