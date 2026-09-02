@@ -1,10 +1,10 @@
-export function currentPartsInZone(timezone: string): { date: string; hours: number; minutes: number } {
+export function currentPartsInZone(timezone: string, now: Date = new Date()): { date: string; hours: number; minutes: number } {
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hour12: false,
   });
-  const parts = fmt.formatToParts(new Date());
+  const parts = fmt.formatToParts(now);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   let hours = Number(get("hour"));
   if (hours === 24) hours = 0;
@@ -23,7 +23,7 @@ export function publishDueCount(opts: {
   now?: Date;
 }): number {
   const now = opts.now ?? new Date();
-  const z = currentPartsInZone(opts.timezone);
+  const z = currentPartsInZone(opts.timezone, now);
   const nowMinutes = z.hours * 60 + z.minutes;
   return opts.publishTimes.filter((t) => {
     const target = minutesSinceMidnight(t);
