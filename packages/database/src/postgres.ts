@@ -223,9 +223,13 @@ export class PostgresStore implements Store {
     await this.q(
       `INSERT INTO reels (id,source_id,source_creator,moment_id,script_id,render_id,title,caption,hashtags,state,qa_score,scheduled_for,published_at,platform,platform_post_id,error_code,error_message,failed_stage,retry_count,last_attempt_at,created_at,updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-       ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state, qa_score=EXCLUDED.qa_score, scheduled_for=EXCLUDED.scheduled_for,
-         published_at=EXCLUDED.published_at, platform_post_id=EXCLUDED.platform_post_id, error_code=EXCLUDED.error_code,
-         error_message=EXCLUDED.error_message, retry_count=EXCLUDED.retry_count, updated_at=now()`,
+       ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state, title=EXCLUDED.title, caption=EXCLUDED.caption,
+         hashtags=EXCLUDED.hashtags, moment_id=EXCLUDED.moment_id, script_id=EXCLUDED.script_id,
+         render_id=EXCLUDED.render_id, source_creator=EXCLUDED.source_creator, qa_score=EXCLUDED.qa_score,
+         scheduled_for=EXCLUDED.scheduled_for, published_at=EXCLUDED.published_at, platform=EXCLUDED.platform,
+         platform_post_id=EXCLUDED.platform_post_id, error_code=EXCLUDED.error_code, error_message=EXCLUDED.error_message,
+         failed_stage=EXCLUDED.failed_stage, retry_count=EXCLUDED.retry_count, last_attempt_at=EXCLUDED.last_attempt_at,
+         updated_at=now()`,
       [
         r.id, r.sourceId, r.sourceCreator ?? null, r.momentId ?? null, r.scriptId ?? null, r.renderId ?? null, r.title ?? null,
         r.caption ?? null, JSON.stringify(r.hashtags ?? []), r.state, r.qaScore ?? null, r.scheduledFor ?? null, r.publishedAt ?? null,
