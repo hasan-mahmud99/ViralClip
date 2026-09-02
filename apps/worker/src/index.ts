@@ -29,9 +29,12 @@ export interface EnvOverrides {
 
 export interface WorkerRunResult {
   discovered: number;
+  discoverySkipped?: boolean;
   ready: number;
   publish: { action: string; reason: string }[];
 }
+
+let lastDiscoveryAt = 0;
 
 function isTruthy(v: string | undefined): boolean {
   return v === "true" || v === "1";
@@ -113,19 +116,37 @@ export async function runWorkerOnce(opts?: EnvOverrides): Promise<WorkerRunResul
 
   log.info("worker once starting", { dryRun, mock, target: settings.dailyReelTarget, approval: settings.approvalMode });
 
-  // 1) Discovery (respect queries; dedupe/rights handled in processor)
+  // 1) Discovery — rate limited so the daily YouTube quota is not burned.
+  const discoveryIntervalMs = Number(env.DISCOVERY_INTERVAL_MINUTES ?? 120) * 60_000;
+  const nowMs = Date.now();
+  let disc = { inserted: 0, deduped: 0, blocked: 0 };
+  let discoverySkipped = false;
   const queries = (env.YOUTUBE_SEARCH_QUERIES ?? "viral creator moments")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const trusted = (env.AUTHORIZED_YOUTUBE_CHANNELS ?? env.TRUSTED_CHANNELS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  const disc = await runSourceDiscovery(store, discovery, {
-    queries,
-    maxResults: Number(env.YOUTUBE_MAX_RESULTS ?? 5),
-    policy: settings.sourceRightsPolicy,
-    trustedChannels: trusted,
-  });
-  log.info("discovery complete", disc);
+  if (queries.length === 0) {
+    discoverySkipped = true;
+    log.info("discovery skipped: no queries configured");
+  } else if (discoveryIntervalMs > 0 && nowMs - lastDiscoveryAt < discoveryIntervalMs) {
+    discoverySkipped = true;
+    log.info("discovery skipped: within interval", { intervalMin: discoveryIntervalMs / 60_000 });
+  } else {
+    const trusted = (env.AUTHORIZED_YOUTUBE_CHANNELS ?? env.TRUSTED_CHANNELS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    try {
+      disc = await runSourceDiscovery(store, discovery, {
+        queries,
+        maxResults: Number(env.YOUTUBE_MAX_RESULTS ?? 5),
+        policy: settings.sourceRightsPolicy,
+        trustedChannels: trusted,
+      });
+      lastDiscoveryAt = nowMs;
+      log.info("discovery complete", disc);
+    } catch (err) {
+      // A quota/rate-limit/network failure must not block processing of approved sources.
+      log.warn("discovery failed (continuing to processing)", { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
 
   // 2) Process every APPROVED + ingested source that doesn't already have a finished reel.
   const localSource = env.SOURCE_MEDIA ?? env.LOCAL_SOURCE_FILE;
@@ -151,7 +172,7 @@ export async function runWorkerOnce(opts?: EnvOverrides): Promise<WorkerRunResul
     (s) => s.localFilePath && s.rightsStatus !== "BLOCKED"
   );
   if (approved.length === 0) log.info("no approved+ingested sources to process");
-  const result: WorkerRunResult = { discovered: disc.inserted, ready: 0, publish: [] };
+  const result: WorkerRunResult = { discovered: disc.inserted, discoverySkipped, ready: 0, publish: [] };
   for (const source of approved) {
     const existingReels = await store.listReels();
     const reelForSource = existingReels.find((r) => r.sourceId === source.id);
