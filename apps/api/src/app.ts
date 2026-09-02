@@ -1,7 +1,9 @@
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
-import { InMemoryStore, PostgresStore, Store } from "@viralclip/database";
-import { createLogger, Settings } from "@viralclip/shared";
+import multer from "multer";
+import { mkdirSync } from "node:fs";
+import { InMemoryStore, PostgresStore, Store, SourceVideoRow } from "@viralclip/database";
+import { createLogger, Settings, sha256 } from "@viralclip/shared";
 import { randomUUID } from "node:crypto";
 import { runWorkerOnce, createStoreFromEnv } from "@viralclip/worker";
 import { runSourceDiscovery } from "@viralclip/worker";
@@ -148,6 +150,41 @@ export function createApi(opts?: {
     const target = Number(process.env.DAILY_REEL_TARGET ?? 3);
     const remaining = Math.max(0, target - publishedToday - ready);
     res.json({ target, publishedToday, ready, processing, failed, remaining, totalSources: sources.length, totalReels: reels.length });
+  });
+
+  // --- Authorized source ingestion (operator-provided file only) ---
+  const sourceDir = process.env.SOURCE_STORAGE ?? "media/sources";
+  mkdirSync(sourceDir, { recursive: true });
+  const upload = multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, sourceDir),
+      filename: (_req, file, cb) => cb(null, `${Date.now()}-${randomUUID().slice(0, 8)}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`),
+    }),
+    limits: { fileSize: 1024 * 1024 * 1024 },
+  });
+
+  app.post("/api/sources/upload", upload.single("file"), async (req, res) => {
+    if (!req.file) {
+      res.status(400).json({ error: "no file uploaded (field name: file)" });
+      return;
+    }
+    const title = (req.body?.title as string) ?? req.file.originalname;
+    const now = new Date().toISOString();
+    const relPath = req.file.path.replace(/\\/g, "/");
+    const source: SourceVideoRow = {
+      id: `src_${sha256(req.file.path).slice(0, 18)}`,
+      sourceUrl: `file://${relPath}`,
+      sourcePlatform: "local",
+      title,
+      rightsStatus: "UNKNOWN",
+      status: "RIGHTS_PENDING",
+      localFilePath: relPath,
+      sourceHash: sha256(req.file.path).slice(0, 32),
+      createdAt: now,
+      updatedAt: now,
+    };
+    await store.saveSource(source);
+    res.status(201).json({ source });
   });
 
   return app;

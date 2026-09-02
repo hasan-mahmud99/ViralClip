@@ -1,6 +1,7 @@
 # ============ ViralClip ============
-# PHP-style comment lines like this one are NOT supported by YAML.
 # This docker-compose targets the AWS Ubuntu host.
+# SECURITY: Postgres & Redis are NOT exposed to the host/internet (internal network only).
+# API is bound to 127.0.0.1 (reachable via SSH / internal dashboard proxy).
 
 services:
   postgres:
@@ -19,8 +20,7 @@ services:
       timeout: 5s
       retries: 10
     networks: [viralclip]
-    ports:
-      - "5432:5432"
+    # NO host port exposure
 
   redis:
     image: redis:7-alpine
@@ -35,8 +35,7 @@ services:
       timeout: 5s
       retries: 10
     networks: [viralclip]
-    ports:
-      - "6379:6379"
+    # NO host port exposure
 
   api:
     build:
@@ -58,7 +57,7 @@ services:
       - media:/app/media
     networks: [viralclip]
     ports:
-      - "${API_PORT:-4000}:4000"
+      - "127.0.0.1:${API_PORT:-4000}:4000"
 
   worker:
     build:
