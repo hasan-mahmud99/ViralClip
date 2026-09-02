@@ -5,9 +5,9 @@ import { mkdirSync } from "node:fs";
 import { InMemoryStore, PostgresStore, Store, SourceVideoRow } from "@viralclip/database";
 import { createLogger, Settings, sha256 } from "@viralclip/shared";
 import { randomUUID } from "node:crypto";
-import { runWorkerOnce, createStoreFromEnv } from "@viralclip/worker";
+import { runWorkerOnce, createStoreFromEnv, gateAndPublish } from "@viralclip/worker";
 import { runSourceDiscovery } from "@viralclip/worker";
-import { MockDiscoveryProvider, YouTubeDiscoveryProvider } from "@viralclip/providers";
+import { MockDiscoveryProvider, YouTubeDiscoveryProvider, FacebookPublisherProvider, MockPublisherProvider } from "@viralclip/providers";
 
 export type WorkerControl = {
   triggerOnce: () => Promise<unknown>;
@@ -149,6 +149,28 @@ export function createApi(opts?: {
     await store.updateReel(req.params.id, { state: "DISCOVERED", errorMessage: null, retryCount: 0, updatedAt: new Date().toISOString() });
     const result = await runWorkerOnce({ store });
     res.json(result);
+  });
+
+  app.post("/api/reels/:id/publish", async (req, res) => {
+    // Manual operator action: explicitly approves and publishes a READY reel.
+    const reel = await store.getReel(req.params.id);
+    if (!reel) {
+      res.status(404).json({ error: "reel not found" });
+      return;
+    }
+    await store.updateReel(reel.id, { state: "READY", updatedAt: new Date().toISOString() });
+    const ready = (await store.getReel(reel.id))!;
+    const hasCreds = Boolean(process.env.META_ACCESS_TOKEN && process.env.META_PAGE_ID);
+    const dryRun = (process.env.DRY_RUN ?? "true") !== "false";
+    const publisher = hasCreds
+      ? new FacebookPublisherProvider({ accessToken: process.env.META_ACCESS_TOKEN!, pageId: process.env.META_PAGE_ID!, apiVersion: process.env.META_API_VERSION ?? "v22.0" })
+      : new MockPublisherProvider(process.env.META_PAGE_ID ?? "mock");
+    const outcome = await gateAndPublish(store, publisher, ready, {
+      dryRun,
+      approvalMode: "automatic", // explicit operator action = approval granted
+      credentialsConfigured: hasCreds,
+    });
+    res.json(outcome);
   });
 
   app.get("/api/jobs", async (_req, res) => {

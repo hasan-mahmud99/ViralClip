@@ -207,6 +207,7 @@ function App() {
                 <td>{r.qaScore ?? "—"}</td>
                 <td>
                   <button style={btn} disabled={r.state === "READY"} onClick={() => act(() => a.post(`/api/reels/${r.id}/approve`), "reel ready")}>Ready</button>{" "}
+                  <button style={btn} onClick={() => act(() => a.post(`/api/reels/${r.id}/publish`), "publish requested")}>Publish Now</button>{" "}
                   <button style={btnDanger} onClick={() => act(() => a.post(`/api/reels/${r.id}/reject`), "rejected")}>Reject</button>{" "}
                   <button style={btn} onClick={() => act(() => a.post(`/api/reels/${r.id}/retry`), "retry queued")}>Retry</button>
                 </td>
