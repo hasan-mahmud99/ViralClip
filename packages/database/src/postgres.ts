@@ -255,14 +255,17 @@ export class PostgresStore implements Store {
     await this.saveReel({ ...cur, ...patch });
   }
   private rowToReel(r: Record<string, unknown>): ReelRow {
+    const iso = (v: unknown): string | null => (v == null ? null : new Date(v as string).toISOString());
     return {
       id: String(r.id), sourceId: String(r.source_id), sourceCreator: (r.source_creator as string) ?? null,
       momentId: (r.moment_id as string) ?? null, scriptId: (r.script_id as string) ?? null, renderId: (r.render_id as string) ?? null,
       title: (r.title as string) ?? null, caption: (r.caption as string) ?? null, hashtags: (r.hashtags ?? []) as string[],
-      state: String(r.state), qaScore: r.qa_score != null ? Number(r.qa_score) : null, scheduledFor: (r.scheduled_for as string) ?? null,
-      publishedAt: (r.published_at as string) ?? null, platform: (r.platform as string) ?? null, platformPostId: (r.platform_post_id as string) ?? null,
+      state: String(r.state), qaScore: r.qa_score != null ? Number(r.qa_score) : null,
+      scheduledFor: iso(r.scheduled_for),
+      publishedAt: iso(r.published_at),
+      platform: (r.platform as string) ?? null, platformPostId: (r.platform_post_id as string) ?? null,
       errorCode: (r.error_code as string) ?? null, errorMessage: (r.error_message as string) ?? null, failedStage: (r.failed_stage as string) ?? null,
-      retryCount: Number(r.retry_count ?? 0), lastAttemptAt: (r.last_attempt_at as string) ?? null,
+      retryCount: Number(r.retry_count ?? 0), lastAttemptAt: iso(r.last_attempt_at),
       createdAt: new Date(r.created_at as string).toISOString(), updatedAt: new Date(r.updated_at as string).toISOString(),
     };
   }
