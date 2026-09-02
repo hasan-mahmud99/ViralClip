@@ -87,11 +87,15 @@ function buildProviders(env: NodeJS.ProcessEnv, outRoot: string) {
 export async function runWorkerOnce(opts?: EnvOverrides): Promise<WorkerRunResult> {
   const env = opts?.env ?? process.env;
   const store: Store = opts?.store ?? createStoreFromEnv(env);
+  const storedRow = await store.getSettings();
+  const stored = (storedRow?.data ?? {}) as Partial<Record<string, unknown>>;
   const settings = {
-    dailyReelTarget: Number(env.DAILY_REEL_TARGET ?? 3),
-    approvalMode: (env.APPROVAL_MODE ?? "manual") as "manual" | "automatic" | "hybrid",
-    sourceRightsPolicy: (env.SOURCE_RIGHTS_POLICY ?? "approved_only") as "manual" | "approved_only" | "licensed_only" | "trusted_sources",
-    timezone: env.TIMEZONE ?? "Asia/Dhaka",
+    dailyReelTarget: Number(stored.dailyReelTarget ?? env.DAILY_REEL_TARGET ?? 3),
+    approvalMode: (stored.approvalMode ?? env.APPROVAL_MODE ?? "manual") as "manual" | "automatic" | "hybrid",
+    sourceRightsPolicy: (stored.sourceRightsPolicy ?? env.SOURCE_RIGHTS_POLICY ?? "approved_only") as "manual" | "approved_only" | "licensed_only" | "trusted_sources",
+    timezone: String(stored.timezone ?? env.TIMEZONE ?? "Asia/Dhaka"),
+    commentaryLanguage: String(stored.commentaryLanguage ?? env.COMMENTARY_LANGUAGE ?? "bn") as "bn" | "en",
+    minMomentScore: Number(stored.minMomentScore ?? env.MIN_MOMENT_SCORE ?? 7.5),
   };
   const dryRun = env.DRY_RUN === undefined ? true : isTruthy(env.DRY_RUN);
   const outRoot = env.STORAGE_BASE_PATH ?? "media";
@@ -112,7 +116,7 @@ export async function runWorkerOnce(opts?: EnvOverrides): Promise<WorkerRunResul
     transcription,
     tts,
     dirs,
-    language: (env.COMMENTARY_LANGUAGE ?? "bn") as "bn" | "en",
+    language: settings.commentaryLanguage,
     subtitles: env.SUBTITLES_ENABLED === undefined ? true : isTruthy(env.SUBTITLES_ENABLED),
   });
 

@@ -113,12 +113,51 @@ export function createApi(opts?: {
     res.json({ ok: true });
   });
 
+  app.put("/api/sources/:id/rights", async (req, res) => {
+    const body = req.body as { rightsStatus?: string; license?: string; permissionUrl?: string; notes?: string; actor?: string };
+    const patch: Partial<SourceVideoRow> = {};
+    if (body.rightsStatus) {
+      patch.rightsStatus = body.rightsStatus;
+      patch.status = body.rightsStatus === "BLOCKED" ? "BLOCKED" : body.rightsStatus === "USER_APPROVED" ? "APPROVED" : "RIGHTS_PENDING";
+    }
+    if (body.license) patch.sourceLicense = body.license;
+    if (body.permissionUrl) patch.permissionUrl = body.permissionUrl;
+    if (body.notes !== undefined) patch.rightsNotes = body.notes;
+    patch.approvedByUser = body.actor ?? "admin";
+    patch.approvedAt = new Date().toISOString();
+    await store.updateSource(req.params.id, patch);
+    const updated = await store.getSource(req.params.id);
+    res.json({ source: updated });
+  });
+
   app.get("/api/reels", async (_req, res) => {
     res.json({ reels: await store.listReels() });
   });
 
+  app.post("/api/reels/:id/approve", async (req, res) => {
+    await store.updateReel(req.params.id, { state: "READY", updatedAt: new Date().toISOString() });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/reels/:id/reject", async (req, res) => {
+    await store.updateReel(req.params.id, { state: "REJECTED", errorMessage: req.body?.reason ?? "rejected by operator", updatedAt: new Date().toISOString() });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/reels/:id/retry", async (req, res) => {
+    // Allow the pipeline to re-run a failed/rejected reel by resetting its state.
+    await store.updateReel(req.params.id, { state: "DISCOVERED", errorMessage: null, retryCount: 0, updatedAt: new Date().toISOString() });
+    const result = await runWorkerOnce({ store });
+    res.json(result);
+  });
+
   app.get("/api/jobs", async (_req, res) => {
     res.json({ jobs: await store.listJobRuns() });
+  });
+
+  app.get("/api/publish/status", async (_req, res) => {
+    const jobs = await store.listPublishJobs();
+    res.json({ jobs });
   });
 
   app.post("/api/jobs/discover", async (_req, res) => {
@@ -146,8 +185,10 @@ export function createApi(opts?: {
     const publishedToday = reels.filter((r) => r.publishedAt?.startsWith(today)).length;
     const ready = reels.filter((r) => r.state === "READY").length;
     const processing = reels.filter((r) => ["TRANSCRIBING", "QA_PASSED", "RENDERED", "SCHEDULED"].includes(r.state)).length;
-    const failed = reels.filter((r) => r.state === "FAILED").length;
-    const target = Number(process.env.DAILY_REEL_TARGET ?? 3);
+    const failed = reels.filter((r) => r.state === "FAILED" || r.state === "REJECTED").length;
+    const storedSettings = await store.getSettings();
+    const s = (storedSettings?.data ?? {}) as Partial<Settings>;
+    const target = Number(s.dailyReelTarget ?? process.env.DAILY_REEL_TARGET ?? 3);
     const remaining = Math.max(0, target - publishedToday - ready);
     res.json({ target, publishedToday, ready, processing, failed, remaining, totalSources: sources.length, totalReels: reels.length });
   });
