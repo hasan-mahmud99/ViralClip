@@ -1,0 +1,104 @@
+# ============ ViralClip ============
+# PHP-style comment lines like this one are NOT supported by YAML.
+# This docker-compose targets the AWS Ubuntu host.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: viralclip-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-viralclip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-viralclip}
+      POSTGRES_DB: ${POSTGRES_DB:-viralclip}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-viralclip}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [viralclip]
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: viralclip-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [viralclip]
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    container_name: viralclip-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-viralclip}:${POSTGRES_PASSWORD:-viralclip}@postgres:5432/${POSTGRES_DB:-viralclip}?schema=public
+      REDIS_URL: redis://redis:6379
+      API_HOST: 0.0.0.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - media:/app/media
+    networks: [viralclip]
+    ports:
+      - "${API_PORT:-4000}:4000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.worker
+    container_name: viralclip-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-viralclip}:${POSTGRES_PASSWORD:-viralclip}@postgres:5432/${POSTGRES_DB:-viralclip}?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - media:/app/media
+    networks: [viralclip]
+    # No ports needed. Scale with --scale worker=1 (single due to concurrency settings).
+    deploy:
+      replicas: 1
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.dashboard
+    container_name: viralclip-dashboard
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks: [viralclip]
+    ports:
+      - "${DASHBOARD_PORT:-5173}:80"
+
+volumes:
+  pgdata:
+  redisdata:
+  media:
+
+networks:
+  viralclip:
+    driver: bridge

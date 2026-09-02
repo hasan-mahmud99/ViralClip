@@ -1,0 +1,10 @@
+{
+  "name": "viralclip-tests",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "test:video": "vitest run --config vitest.video.config.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+  }
+}

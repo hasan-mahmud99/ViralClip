@@ -1,0 +1,20 @@
+{
+  "name": "@viralclip/worker",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@viralclip/database": "0.1.0",
+    "@viralclip/prompts": "0.1.0",
+    "@viralclip/providers": "0.1.0",
+    "@viralclip/shared": "0.1.0",
+    "@viralclip/video": "0.1.0",
+    "bullmq": "^5.81.4",
+    "ioredis": "^5.11.1"
+  }
+}
