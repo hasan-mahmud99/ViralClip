@@ -1,6 +1,6 @@
 import { config as loadDotenv } from "dotenv";
 import { createLogger, nowIso, sha256 } from "@viralclip/shared";
-import { InMemoryStore, PostgresStore, Store, SourceVideoRow } from "@viralclip/database";
+import { InMemoryStore, PostgresStore, Store, SourceVideoRow, ReelRow } from "@viralclip/database";
 import { mkdirSync } from "node:fs";
 import {
   GeminiProvider,
@@ -19,6 +19,7 @@ import { buildServices } from "./services";
 import { createReel, advanceReel, markApproved } from "./pipeline-runner";
 import { gateAndPublish } from "./publish-gate";
 import { makeScriptingRouter } from "./local-router";
+import { publishDueCount, currentPartsInZone } from "./scheduler";
 import { join } from "node:path";
 
 const log = createLogger("viralclip-worker");
@@ -211,6 +212,36 @@ export async function runWorkerOnce(opts?: EnvOverrides): Promise<WorkerRunResul
         await store.updateReel(reel.id, { state: "FAILED", errorMessage: msg, retryCount: reel.retryCount + 1, lastAttemptAt: nowIso() });
       }
     }
+  }
+
+  // 3) Scheduled publishing: in automatic/hybrid mode publish READY reels at PUBLISH_TIMES.
+  const publishTimes = Array.isArray(stored.publishTimes)
+    ? (stored.publishTimes as string[])
+    : (env.PUBLISH_TIMES ?? "09:00,14:00,20:00").split(",").map((s) => s.trim()).filter(Boolean);
+  const dueToday = publishDueCount({ timezone: settings.timezone, publishTimes });
+  const todayKey = currentPartsInZone(settings.timezone).date;
+  const allReels = await store.listReels();
+  const publishedToday = allReels.filter((r) => r.publishedAt?.startsWith(todayKey) || (r.platformPostId && r.publishedAt)).length;
+
+  if (settings.approvalMode !== "manual" && !dryRun && dueToday > publishedToday) {
+    const readyReels = allReels.filter((r) => r.state === "READY").sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+    const need = dueToday - publishedToday;
+    for (const reel of readyReels.slice(0, need)) {
+      try {
+        const gate = await gateAndPublish(store, publisher, reel, {
+          dryRun: false,
+          approvalMode: "automatic",
+          credentialsConfigured: Boolean(env.META_ACCESS_TOKEN && env.META_PAGE_ID) && !mock,
+        });
+        result.publish.push(gate);
+        if (gate.action === "PUBLISHED" || gate.action === "WOULD_PUBLISH") result.ready += 1;
+        log.info("scheduled publish", { action: gate.action, reason: gate.reason, dueToday, publishedToday });
+      } catch (err) {
+        log.error("scheduled publish failed", { error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  } else if (dryRun) {
+    log.info("scheduled publish skipped (dry-run)");
   }
 
   return result;

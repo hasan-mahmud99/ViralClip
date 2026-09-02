@@ -1,22 +1,33 @@
-export function cronForTime(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map((x) => Number(x));
-  if (h === undefined || m === undefined || Number.isNaN(h) || Number.isNaN(m)) {
-    throw new Error(`invalid time ${hhmm}`);
-  }
-  return `${m} ${h} * * *`;
+export function currentPartsInZone(timezone: string): { date: string; hours: number; minutes: number } {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const parts = fmt.formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  let hours = Number(get("hour"));
+  if (hours === 24) hours = 0;
+  const month = get("month"), day = get("day"), year = get("year");
+  return { date: `${year}-${month}-${day}`, hours, minutes: Number(get("minute")) };
 }
 
-export function nextOccurrence(hhmm: string, timezone: string): Date {
-  // Compute next wall-clock occurrence of hhmm in the given IANA timezone.
-  const [h, m] = hhmm.split(":").map(Number) as [number, number];
-  const now = new Date();
-  const parts = now.toLocaleString("en-US", { timeZone: timezone, hour12: false }).split(/[/,:\s]+/);
-  const month = Number(parts[0]) - 1;
-  const day = Number(parts[1]);
-  const year = Number(parts[2]);
-  let candidate = new Date(Date.UTC(year, month, day, h, m, 0, 0));
-  if (candidate.getTime() <= now.getTime()) {
-    candidate = new Date(Date.UTC(year, month, day + 1, h, m, 0, 0));
-  }
-  return candidate;
+export function minutesSinceMidnight(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+export function publishDueCount(opts: {
+  timezone: string;
+  publishTimes: string[];
+  now?: Date;
+}): number {
+  const now = opts.now ?? new Date();
+  const z = currentPartsInZone(opts.timezone);
+  const nowMinutes = z.hours * 60 + z.minutes;
+  return opts.publishTimes.filter((t) => {
+    const target = minutesSinceMidnight(t);
+    // Publish once per slot once we are at or slightly after it.
+    return nowMinutes >= target - 1 && nowMinutes <= target + 90;
+  }).length;
 }
