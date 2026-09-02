@@ -1,6 +1,7 @@
 import { config as loadDotenv } from "dotenv";
 import { createLogger, nowIso, sha256 } from "@viralclip/shared";
 import { InMemoryStore, PostgresStore, Store, SourceVideoRow } from "@viralclip/database";
+import { mkdirSync } from "node:fs";
 import {
   GeminiProvider,
   MockLLMProvider,
@@ -103,6 +104,7 @@ export async function runWorkerOnce(opts?: EnvOverrides): Promise<WorkerRunResul
     subtitleDir: join(outRoot, "subtitles"),
     renderDir: join(outRoot, "renders"),
   };
+  for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
 
   const services = buildServices({
     store,
